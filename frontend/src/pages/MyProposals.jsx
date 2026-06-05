@@ -1,40 +1,39 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getMyProposals, getProposalById } from '../services/proposals'
 import '../App.css'
-
-const initialUserProposals = [
-  {
-    id: 101,
-    title: 'Mejora de iluminación en barrio norte',
-    summary: 'Aumentar puntos de luz en las calles principales del barrio norte.',
-    votes: 45,
-    status: 'En revisión',
-    documents: ['Propuesta inicial', 'Presupuesto estimado'],
-    revisions: ['Revisión 1: feedback ciudadano'],
-  },
-  {
-    id: 102,
-    title: 'Área de juegos infantil',
-    summary: 'Crear un espacio seguro y moderno para niños en la plaza central.',
-    votes: 32,
-    status: 'Aprobada',
-    documents: ['Diseño del parque', 'Estudio de seguridad'],
-    revisions: ['Revisión 1: ajustes de diseño', 'Revisión 2: materiales seguros'],
-  },
-]
 
 export default function MyProposals() {
   const navigate = useNavigate()
-  const [userProposals, setUserProposals] = useState(initialUserProposals)
+  const [userProposals, setUserProposals] = useState([])
   const [selectedProposal, setSelectedProposal] = useState(null)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
-    if (!token) navigate('/login', { replace: true })
+    if (!token) {
+      navigate('/login', { replace: true })
+      return
+    }
+
+    loadMyProposals()
   }, [navigate])
 
-  const handleViewProposal = (proposal) => {
-    setSelectedProposal(proposal)
+  const loadMyProposals = async () => {
+    try {
+      const proposals = await getMyProposals()
+      setUserProposals(proposals)
+    } catch (error) {
+      setUserProposals([])
+    }
+  }
+
+  const handleViewProposal = async (proposalId) => {
+    try {
+      const proposal = await getProposalById(proposalId)
+      setSelectedProposal(proposal)
+    } catch (error) {
+      console.error(error)
+    }
   }
 
   const handleCloseModal = () => {
@@ -53,7 +52,7 @@ export default function MyProposals() {
           <button className="nav-btn nav-btn-secondary" type="button" onClick={handleGoBack}>
             Ver propuestas de otros
           </button>
-          <button className="nav-btn nav-btn-primary" type="button">
+          <button className="nav-btn nav-btn-primary" type="button" onClick={() => navigate('/home')}>
             + Crear propuesta
           </button>
           <div className="user-badge">USER</div>
@@ -70,7 +69,7 @@ export default function MyProposals() {
               </div>
               <h3>{proposal.title}</h3>
               <p>{proposal.summary}</p>
-              <button className="proposal-view-btn" type="button" onClick={() => handleViewProposal(proposal)}>
+              <button className="proposal-view-btn" type="button" onClick={() => handleViewProposal(proposal.id)}>
                 Ver detalles
               </button>
             </article>
@@ -95,7 +94,7 @@ export default function MyProposals() {
                 <div className="proposal-section">
                   <h3>Documentos</h3>
                   <ul>
-                    {selectedProposal.documents.map((doc, index) => (
+                    {selectedProposal.documents?.map((doc, index) => (
                       <li key={index}>{doc}</li>
                     ))}
                   </ul>
@@ -103,9 +102,29 @@ export default function MyProposals() {
                 <div className="proposal-section">
                   <h3>Revisiones</h3>
                   <ul>
-                    {selectedProposal.revisions.map((revision, index) => (
+                    {selectedProposal.revisions?.map((revision, index) => (
                       <li key={index}>{revision}</li>
                     ))}
+                  </ul>
+                </div>
+                <div className="proposal-section">
+                  <h3>Adjuntos</h3>
+                  <ul>
+                    {selectedProposal.attachments?.length > 0 ? (
+                      selectedProposal.attachments.map((attachment, index) => (
+                        <li key={index}>
+                          {attachment.type === 'link' ? (
+                            <a href={attachment.url} target="_blank" rel="noreferrer">
+                              {attachment.label}
+                            </a>
+                          ) : (
+                            <span>{attachment.label} ({attachment.url})</span>
+                          )}
+                        </li>
+                      ))
+                    ) : (
+                      <li>No hay adjuntos</li>
+                    )}
                   </ul>
                 </div>
               </div>

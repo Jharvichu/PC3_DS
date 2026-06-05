@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000/api/auth'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 
 export async function login(dni, signature) {
   if (!dni || !signature) {
@@ -6,7 +6,7 @@ export async function login(dni, signature) {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/login`, {
+    const res = await fetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dni, signature }),
@@ -20,11 +20,8 @@ export async function login(dni, signature) {
     const data = await res.json()
     return data.token
   } catch (error) {
-    // Si no hay backend disponible, permitimos un modo demo con cualquier DNI
-    if (error instanceof TypeError || error.message.includes('Failed to fetch')) {
-      return `demo-token-${dni}`
-    }
-    throw error
+    const errText = error instanceof Error ? error.message : 'Error en la autenticación'
+    throw new Error(errText)
   }
 }
 

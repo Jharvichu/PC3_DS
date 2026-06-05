@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import {
+  createComment,
+  createProposal,
+  getProposalById,
+  getProposals,
+  toggleSupport,
+} from '../services/proposals'
 import '../App.css'
 
 const initialProposals = [
@@ -37,51 +44,63 @@ const initialProposals = [
   },
 ]
 
-const initialComments = {
-  1: ['Gran idea para mejorar los parques.', 'Me gustaría que incluyan cestos para mascotas.'],
-  2: ['Perfecto para reducir emisiones.', 'Falta una opción para familias.'],
-  3: ['Muy buena iniciativa cultural.', 'Sería ideal hacerlo en sábados.'],
-  4: ['Necesario en todas las escuelas.', 'Buen punto, ¿incluye talleres?'],
-}
-
 export default function Home() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const [proposals, setProposals] = useState(initialProposals)
   const [selectedProposal, setSelectedProposal] = useState(null)
   const [commentText, setCommentText] = useState('')
-  const [comments, setComments] = useState(initialComments)
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [newProposal, setNewProposal] = useState({
-    title: '',
-    summary: '',
-  })
+  const [newProposal, setNewProposal] = useState({ title: '', summary: '' })
+  const [attachments, setAttachments] = useState([])
+  const [attachmentLabel, setAttachmentLabel] = useState('')
+  const [attachmentUrl, setAttachmentUrl] = useState('')
+  const [attachmentType, setAttachmentType] = useState('link')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
-    if (!token) navigate('/login', { replace: true })
+    if (!token) {
+      navigate('/login', { replace: true })
+      return
+    }
+
+    loadProposals()
   }, [navigate])
+
+  const loadProposals = async () => {
+    try {
+      const result = await getProposals()
+      setProposals(result)
+    } catch (error) {
+      setProposals(initialProposals)
+    }
+  }
 
   const filteredProposals = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return initialProposals
-    return initialProposals.filter(
+    if (!query) return proposals
+    return proposals.filter(
       (proposal) =>
         proposal.title.toLowerCase().includes(query) ||
         proposal.summary.toLowerCase().includes(query),
     )
-  }, [search])
+  }, [search, proposals])
 
   const handleSubmitSearch = (event) => {
     event.preventDefault()
   }
 
-  const handleScrollToProposals = () => {
-    document.getElementById('proposals')?.scrollIntoView({ behavior: 'smooth' })
-  }
-
-  const handleViewProposal = (proposal) => {
-    setSelectedProposal(proposal)
-    setCommentText('')
+  const handleViewProposal = async (proposalId) => {
+    try {
+      const proposal = await getProposalById(proposalId)
+      setSelectedProposal(proposal)
+      setCommentText('')
+    } catch (error) {
+      const fallback = proposals.find((proposal) => proposal.id === proposalId)
+      if (fallback) {
+        setSelectedProposal(fallback)
+      }
+    }
   }
 
   const handleCloseModal = () => {
@@ -89,18 +108,30 @@ export default function Home() {
     setCommentText('')
   }
 
-  const handleAddComment = (event) => {
+  const handleAddComment = async (event) => {
     event.preventDefault()
     if (!commentText.trim() || !selectedProposal) return
 
-    setComments((current) => ({
-      ...current,
-      [selectedProposal.id]: [
-        ...(current[selectedProposal.id] || []),
-        commentText.trim(),
-      ],
-    }))
-    setCommentText('')
+    try {
+      await createComment(selectedProposal.id, commentText)
+      const updatedProposal = await getProposalById(selectedProposal.id)
+      setSelectedProposal(updatedProposal)
+      setCommentText('')
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  const handleSupportClick = async () => {
+    if (!selectedProposal) return
+    try {
+      await toggleSupport(selectedProposal.id)
+      const updatedProposal = await getProposalById(selectedProposal.id)
+      setSelectedProposal(updatedProposal)
+      await loadProposals()
+    } catch (error) {
+      console.error(error)
+    }
   }
 
   const handleOpenCreateModal = () => {
@@ -110,14 +141,41 @@ export default function Home() {
   const handleCloseCreateModal = () => {
     setShowCreateModal(false)
     setNewProposal({ title: '', summary: '' })
+    setAttachments([])
+    setAttachmentLabel('')
+    setAttachmentUrl('')
+    setAttachmentType('link')
   }
 
-  const handleCreateProposal = (event) => {
+  const handleAddAttachment = () => {
+    if (!attachmentLabel.trim() || !attachmentUrl.trim()) return
+    setAttachments((current) => [
+      ...current,
+      {
+        type: attachmentType,
+        label: attachmentLabel.trim(),
+        url: attachmentUrl.trim(),
+      },
+    ])
+    setAttachmentLabel('')
+    setAttachmentUrl('')
+  }
+
+  const handleRemoveAttachment = (index) => {
+    setAttachments((current) => current.filter((_, i) => i !== index))
+  }
+
+  const handleCreateProposal = async (event) => {
     event.preventDefault()
     if (!newProposal.title.trim() || !newProposal.summary.trim()) return
-    // Aquí iría la lógica para enviar al backend
-    console.log('Nueva propuesta:', newProposal)
-    handleCloseCreateModal()
+
+    try {
+      await createProposal(newProposal.title, newProposal.summary, attachments)
+      await loadProposals()
+      handleCloseCreateModal()
+    } catch (error) {
+      console.error(error)
+    }
   }
 
   const handleGoToMyProposals = () => {
@@ -163,7 +221,7 @@ export default function Home() {
               </div>
               <h3>{proposal.title}</h3>
               <p>{proposal.summary}</p>
-              <button className="proposal-view-btn" type="button" onClick={() => handleViewProposal(proposal)}>
+              <button className="proposal-view-btn" type="button" onClick={() => handleViewProposal(proposal.id)}>
                 Ver
               </button>
             </article>
@@ -188,7 +246,7 @@ export default function Home() {
                 <div className="proposal-section">
                   <h3>Documentos</h3>
                   <ul>
-                    {selectedProposal.documents.map((doc, index) => (
+                    {selectedProposal.documents?.map((doc, index) => (
                       <li key={index}>{doc}</li>
                     ))}
                   </ul>
@@ -196,7 +254,7 @@ export default function Home() {
                 <div className="proposal-section">
                   <h3>Revisiones</h3>
                   <ul>
-                    {selectedProposal.revisions.map((revision, index) => (
+                    {selectedProposal.revisions?.map((revision, index) => (
                       <li key={index}>{revision}</li>
                     ))}
                   </ul>
@@ -209,18 +267,22 @@ export default function Home() {
                   <p>{selectedProposal.summary}</p>
                 </div>
 
-                <button className="support-btn" type="button">
-                  Apoyar propuesta
+                <button className="support-btn" type="button" onClick={handleSupportClick}>
+                  {selectedProposal.supported ? 'Retirar apoyo' : 'Apoyar propuesta'}
                 </button>
 
                 <div className="proposal-comments-panel">
                   <h3>Comentarios</h3>
                   <div className="proposal-comments-list">
-                    {(comments[selectedProposal.id] || []).map((comment, index) => (
-                      <div key={index} className="proposal-comment-item">
-                        {comment}
-                      </div>
-                    ))}
+                    {selectedProposal.comments?.length > 0 ? (
+                      selectedProposal.comments.map((comment, index) => (
+                        <div key={index} className="proposal-comment-item">
+                          {comment.message}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="proposal-comment-item">Aún no hay comentarios.</div>
+                    )}
                   </div>
                   <form className="proposal-comment-form" onSubmit={handleAddComment}>
                     <textarea
@@ -283,6 +345,60 @@ export default function Home() {
                     rows={6}
                   />
                 </div>
+
+                <div className="form-group">
+                  <label htmlFor="attachmentType">Tipo de adjunto</label>
+                  <select
+                    id="attachmentType"
+                    value={attachmentType}
+                    onChange={(event) => setAttachmentType(event.target.value)}
+                  >
+                    <option value="link">Link</option>
+                    <option value="file">Archivo</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="attachmentLabel">Nombre del adjunto</label>
+                  <input
+                    id="attachmentLabel"
+                    type="text"
+                    value={attachmentLabel}
+                    onChange={(event) => setAttachmentLabel(event.target.value)}
+                    placeholder="Título del archivo o enlace"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="attachmentUrl">URL o nombre del archivo</label>
+                  <input
+                    id="attachmentUrl"
+                    type="text"
+                    value={attachmentUrl}
+                    onChange={(event) => setAttachmentUrl(event.target.value)}
+                    placeholder="https://... o nombre-del-archivo.pdf"
+                  />
+                </div>
+
+                <button type="button" className="form-btn-secondary" onClick={handleAddAttachment}>
+                  Agregar adjunto
+                </button>
+
+                {attachments.length > 0 && (
+                  <div className="attachment-list">
+                    <h4>Adjuntos</h4>
+                    <ul>
+                      {attachments.map((attachment, index) => (
+                        <li key={index}>
+                          {attachment.type === 'link' ? 'Link:' : 'Archivo:'} {attachment.label} - {attachment.url}{' '}
+                          <button type="button" className="remove-attachment-btn" onClick={() => handleRemoveAttachment(index)}>
+                            Quitar
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 <div className="form-actions">
                   <button type="button" className="form-btn-cancel" onClick={handleCloseCreateModal}>
